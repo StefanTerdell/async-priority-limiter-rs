@@ -1,6 +1,6 @@
 use async_throttle::RateLimiter;
 use futures::future::BoxFuture;
-use std::{collections::HashMap, time::Duration};
+use std::{collections::HashMap, fmt::Display, time::Duration};
 use tokio::time::Instant;
 
 #[derive(Default)]
@@ -46,12 +46,8 @@ impl Limits {
         }
     }
 
-    pub async fn throttle_by_key<T>(
-        &self,
-        job: BoxFuture<'static, T>,
-        key: impl Into<String>,
-    ) -> T {
-        let key = key.into();
+    pub async fn throttle_by_key<T>(&self, job: BoxFuture<'static, T>, key: impl Display) -> T {
+        let key = key.to_string();
 
         match (&self.rate_limiter, self.rate_limiter_key.get(&key)) {
             (Some(rl), Some(rl_key)) => {
@@ -70,8 +66,8 @@ impl Limits {
         }
     }
 
-    pub fn set_wait_until_at_least_by_key(&mut self, instant: Instant, key: impl Into<String>) {
-        let key = key.into();
+    pub fn set_wait_until_at_least_by_key(&mut self, instant: Instant, key: impl Display) {
+        let key = key.to_string();
 
         if self
             .wait_until_key
@@ -86,8 +82,9 @@ impl Limits {
         self.wait_until = instant;
     }
 
-    pub fn set_wait_until_by_key(&mut self, instant: Option<Instant>, key: impl Into<String>) {
-        let key = key.into();
+    pub fn set_wait_until_by_key(&mut self, instant: Option<Instant>, key: impl Display) {
+        let key = key.to_string();
+
         if let Some(instant) = instant {
             self.wait_until_key.insert(key, instant);
         } else {
@@ -99,8 +96,8 @@ impl Limits {
         self.rate_limiter = limit.map(RateLimiter::new);
     }
 
-    pub fn set_rate_limit_by_key(&mut self, limit: Option<Duration>, key: impl Into<String>) {
-        let key = key.into();
+    pub fn set_rate_limit_by_key(&mut self, limit: Option<Duration>, key: impl Display) {
+        let key = key.to_string();
 
         if let Some(limit) = limit {
             self.rate_limiter_key.insert(key, RateLimiter::new(limit));

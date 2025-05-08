@@ -6,4 +6,7 @@ mod task;
 mod tasks_and_limits;
 mod worker;
 
+#[cfg(feature = "reqwest")]
+pub mod reqwest;
+
 pub use limiter::Limiter;

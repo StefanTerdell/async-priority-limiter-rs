@@ -6,7 +6,7 @@ use crate::{
     worker::Worker,
 };
 
-use std::{sync::Arc, time::Duration};
+use std::{fmt::Display, sync::Arc, time::Duration};
 use tokio::{
     sync::{Mutex, oneshot},
     time::Instant,
@@ -35,6 +35,22 @@ impl<T: TaskResult, P: Priority> Limiter<T, P> {
         }
     }
 
+    pub async fn get_wait_duration(&self) -> Option<Duration> {
+        self.tasks_and_limits
+            .limits()
+            .read()
+            .await
+            .get_wait_duration(None)
+    }
+
+    pub async fn get_wait_duration_by_key(&self, key: impl Display) -> Option<Duration> {
+        self.tasks_and_limits
+            .limits()
+            .read()
+            .await
+            .get_wait_duration(Some(key.to_string()))
+    }
+
     pub async fn wait_until_at_least(&self, instant: Instant) {
         self.tasks_and_limits
             .limits()
@@ -43,7 +59,7 @@ impl<T: TaskResult, P: Priority> Limiter<T, P> {
             .set_wait_until_at_least(instant);
     }
 
-    pub async fn wait_until_at_least_by_key(&self, instant: Instant, key: impl Into<String>) {
+    pub async fn wait_until_at_least_by_key(&self, instant: Instant, key: impl Display) {
         self.tasks_and_limits
             .limits()
             .write()
@@ -59,7 +75,7 @@ impl<T: TaskResult, P: Priority> Limiter<T, P> {
             .set_wait_until(instant);
     }
 
-    pub async fn wait_until_by_key(&self, instant: Option<Instant>, key: impl Into<String>) {
+    pub async fn wait_until_by_key(&self, instant: Option<Instant>, key: impl Display) {
         self.tasks_and_limits
             .limits()
             .write()
@@ -75,7 +91,7 @@ impl<T: TaskResult, P: Priority> Limiter<T, P> {
             .set_rate_limit(limit);
     }
 
-    pub async fn set_rate_limit_by_key(&self, limit: Option<Duration>, key: impl Into<String>) {
+    pub async fn set_rate_limit_by_key(&self, limit: Option<Duration>, key: impl Display) {
         self.tasks_and_limits
             .limits()
             .write()
@@ -121,12 +137,12 @@ impl<T: TaskResult, P: Priority> Limiter<T, P> {
         &self,
         job: J,
         priority: P,
-        key: impl Into<String>,
+        key: impl Display,
     ) -> oneshot::Receiver<T> {
         let (send, recv) = oneshot::channel();
 
         self.ingress.send(Task {
-            key: Some(key.into()),
+            key: Some(key.to_string()),
             priority,
             job: Box::pin(job),
             reply: send,
