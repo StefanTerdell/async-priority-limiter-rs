@@ -67,7 +67,7 @@ impl<P: Priority> ReqwestResponseExt<P> for Response {
         limiter: &Limiter<ReqwestResult, P>,
     ) -> Self {
         if let Some(instant) = extract_instant_from_retry_after_header_value(&self) {
-            limiter.wait_until_at_least(instant).await;
+            limiter.set_wait_until_at_least(instant).await;
         }
 
         self
@@ -79,7 +79,7 @@ impl<P: Priority> ReqwestResponseExt<P> for Response {
         key: impl Display,
     ) -> Self {
         if let Some(instant) = extract_instant_from_retry_after_header_value(&self) {
-            limiter.wait_until_at_least_by_key(instant, key).await;
+            limiter.set_wait_until_at_least_by_key(instant, key).await;
         }
 
         self
@@ -91,11 +91,9 @@ impl<P: Priority> ReqwestRequestBuilderExt<P> for RequestBuilder {
         let (client, req) = self.build_split();
 
         let req = req.expect("Unable to extract request from builder!");
+        let res = limiter.queue(client.execute(req), priority).await;
 
-        limiter
-            .queue(client.execute(req), priority)
-            .await
-            .expect("Sender dropped!")
+        res.await
     }
 
     async fn send_limited_by_key(
@@ -107,11 +105,11 @@ impl<P: Priority> ReqwestRequestBuilderExt<P> for RequestBuilder {
         let (client, req) = self.build_split();
 
         let req = req.expect("Unable to extract request from builder!");
-
-        limiter
+        let res = limiter
             .queue_by_key(client.execute(req), priority, key)
-            .await
-            .expect("Sender dropped!")
+            .await;
+
+        res.await
     }
 }
 

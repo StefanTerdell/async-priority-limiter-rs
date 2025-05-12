@@ -107,7 +107,7 @@ impl<P: Priority> ReqwestResponseOpenAiHeadersExt<P> for Response {
         self = self.update_limiter_by_retry_after_header(limiter).await;
 
         if let Some(instant) = extract_max_wait_until_instant_from_headers(&self) {
-            limiter.wait_until_at_least(instant).await;
+            limiter.set_wait_until_at_least(instant).await;
         }
 
         self
@@ -123,7 +123,7 @@ impl<P: Priority> ReqwestResponseOpenAiHeadersExt<P> for Response {
             .await;
 
         if let Some(instant) = extract_max_wait_until_instant_from_headers(&self) {
-            limiter.wait_until_at_least_by_key(instant, key).await;
+            limiter.set_wait_until_at_least_by_key(instant, key).await;
         }
 
         self

@@ -7,39 +7,19 @@ use tokio::time::Instant;
 pub struct Limits {
     pub(crate) wait_until: Option<Instant>,
     pub(crate) wait_until_key: HashMap<String, Instant>,
-    pub(crate) rate_limiter: Option<RateLimiter>,
-    pub(crate) rate_limiter_key: HashMap<String, RateLimiter>,
+    pub(crate) rate_limiter: Option<(Duration, RateLimiter)>,
+    pub(crate) rate_limiter_key: HashMap<String, (Duration, RateLimiter)>,
 }
 
 impl Limits {
     pub fn get_wait_duration(&self, key: Option<String>) -> Option<Duration> {
-        let now = Instant::now();
-
-        if let Some(until) = match (
-            self.wait_until,
-            key.and_then(|key| self.wait_until_key.get(&key)).copied(),
-        ) {
-            (Some(until), Some(until_key)) => {
-                if until > until_key {
-                    Some(until)
-                } else {
-                    Some(until_key)
-                }
-            }
-            (Some(until), None) => Some(until),
-            (None, Some(until_key)) => Some(until_key),
-            (None, None) => None,
-        } {
-            if until > now {
-                return Some(until - now);
-            }
-        }
-
-        None
+        self.wait_until
+            .max(key.and_then(|key| self.wait_until_key.get(&key.to_string()).copied()))
+            .map(|duration| duration.duration_since(Instant::now()))
     }
 
     pub async fn throttle<T>(&self, job: BoxFuture<'static, T>) -> T {
-        if let Some(rl) = &self.rate_limiter {
+        if let Some((_, rl)) = &self.rate_limiter {
             rl.throttle(|| job).await
         } else {
             job.await
@@ -50,12 +30,12 @@ impl Limits {
         let key = key.to_string();
 
         match (&self.rate_limiter, self.rate_limiter_key.get(&key)) {
-            (Some(rl), Some(rl_key)) => {
+            (Some((_, rl)), Some((_, rl_key))) => {
                 rl.throttle(|| async move { rl_key.throttle(|| job).await })
                     .await
             }
-            (Some(rl), None) => rl.throttle(|| job).await,
-            (None, Some(rl_key)) => rl_key.throttle(|| job).await,
+            (Some((_, rl)), None) => rl.throttle(|| job).await,
+            (None, Some((_, rl_key))) => rl_key.throttle(|| job).await,
             (None, None) => job.await,
         }
     }
@@ -92,15 +72,40 @@ impl Limits {
         }
     }
 
-    pub fn set_rate_limit(&mut self, limit: Option<Duration>) {
-        self.rate_limiter = limit.map(RateLimiter::new);
+    pub fn set_interval_at_least(&mut self, interval: Duration) {
+        if self
+            .rate_limiter
+            .as_ref()
+            .is_none_or(|(prev_limit, _)| prev_limit > &interval)
+        {
+            self.rate_limiter = Some((interval, RateLimiter::new(interval)))
+        }
     }
 
-    pub fn set_rate_limit_by_key(&mut self, limit: Option<Duration>, key: impl Display) {
+    pub fn set_interval_at_least_by_key(&mut self, interval: Duration, key: impl Display) {
         let key = key.to_string();
 
-        if let Some(limit) = limit {
-            self.rate_limiter_key.insert(key, RateLimiter::new(limit));
+        if self
+            .rate_limiter_key
+            .get(&key)
+            .as_ref()
+            .is_none_or(|(prev_limit, _)| prev_limit > &interval)
+        {
+            self.rate_limiter_key
+                .insert(key, (interval, RateLimiter::new(interval)));
+        }
+    }
+
+    pub fn set_interval(&mut self, interval: Option<Duration>) {
+        self.rate_limiter = interval.map(|interval| (interval, RateLimiter::new(interval)));
+    }
+
+    pub fn set_interval_by_key(&mut self, interval: Option<Duration>, key: impl Display) {
+        let key = key.to_string();
+
+        if let Some(interval) = interval {
+            self.rate_limiter_key
+                .insert(key, (interval, RateLimiter::new(interval)));
         } else {
             self.rate_limiter_key.remove(&key);
         }

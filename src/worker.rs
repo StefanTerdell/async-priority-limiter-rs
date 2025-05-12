@@ -1,9 +1,12 @@
+use tokio::sync::{Mutex, RwLock};
+
 use crate::{
     auto_traits::{Priority, TaskResult},
-    tasks_and_limits::TasksAndLimits,
+    limits::Limits,
+    task::Task,
 };
 
-use std::sync::Arc;
+use std::{collections::BinaryHeap, sync::Arc};
 
 pub(crate) struct Worker {
     exit_sender: flume::Sender<()>,
@@ -11,7 +14,8 @@ pub(crate) struct Worker {
 
 impl Worker {
     pub fn spawn<T: TaskResult, P: Priority>(
-        tasks_and_limits: Arc<TasksAndLimits<T, P>>,
+        tasks: Arc<Mutex<BinaryHeap<Task<T, P>>>>,
+        limits: Arc<RwLock<Limits>>,
         notification_receiver: flume::Receiver<()>,
     ) -> Self {
         let (exit_sender, exit_receiver) = flume::bounded(1);
@@ -26,17 +30,17 @@ impl Worker {
                             break
                         },
                         _ = notification_receiver.recv_async() => {
-                            let mut tasks_guard = tasks_and_limits.tasks().lock().await;
+                            let mut tasks_guard = tasks.lock().await;
                             let task = tasks_guard.pop();
                             drop(tasks_guard);
 
                             if let Some(task) = task {
-                                let mut limits_lock = tasks_and_limits.limits().read().await;
+                                let mut limits_lock = limits.read().await;
 
                                 if let Some(duration) = limits_lock.get_wait_duration(task.key.clone()) {
                                     drop(limits_lock);
                                     tokio::time::sleep(duration).await;
-                                    limits_lock = tasks_and_limits.limits().read().await;
+                                    limits_lock = limits.read().await;
                                 }
 
                                 let result = if let Some(key) = task.key {
