@@ -6,12 +6,9 @@ description = "Throttles prioritised tasks by limiting the max concurrent tasks 
 license = "ISC"
 repository = "https://github.com/StefanTerdell/async-priority-limiter-rs/"
 keywords = [
-  "prioritised",
-  "prioritized",
   "priority",
   "rate-limit",
   "trottle",
-  "asynchronous",
   "async",
   "queue",
 ]
