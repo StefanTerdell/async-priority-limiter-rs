@@ -1,21 +1,24 @@
-use std::{fmt::Display, time::Duration};
+use std::time::Duration;
 
 use reqwest::Response;
 use tokio::time::Instant;
 
 use super::{ReqwestResponseExt, ReqwestResult};
-use crate::{Limiter, auto_traits::Priority};
+use crate::{
+    Limiter,
+    auto_traits::{Key, Priority},
+};
 
-pub trait ReqwestResponseOpenAiHeadersExt<P: Priority> {
+pub trait ReqwestResponseOpenAiHeadersExt<K: Key, P: Priority> {
     fn update_limiter_by_open_ai_ratelimit_headers(
         self,
-        limiter: &Limiter<ReqwestResult, P>,
+        limiter: &Limiter<K, P, ReqwestResult>,
     ) -> impl Future<Output = Self>;
 
     fn update_limiter_by_key_and_open_ai_ratelimit_headers(
         self,
-        limiter: &Limiter<ReqwestResult, P>,
-        key: impl Display,
+        limiter: &Limiter<K, P, ReqwestResult>,
+        key: K,
     ) -> impl Future<Output = Self>;
 }
 
@@ -99,15 +102,15 @@ fn extract_max_wait_until_instant_from_headers(response: &Response) -> Option<In
     no_requests_until.max(no_tokens_until)
 }
 
-impl<P: Priority> ReqwestResponseOpenAiHeadersExt<P> for Response {
+impl<K: Key, P: Priority> ReqwestResponseOpenAiHeadersExt<K, P> for Response {
     async fn update_limiter_by_open_ai_ratelimit_headers(
         mut self,
-        limiter: &Limiter<ReqwestResult, P>,
+        limiter: &Limiter<K, P, ReqwestResult>,
     ) -> Self {
         self = self.update_limiter_by_retry_after_header(limiter).await;
 
         if let Some(instant) = extract_max_wait_until_instant_from_headers(&self) {
-            limiter.set_wait_until_at_least(instant).await;
+            limiter.set_default_block_until_at_least(instant).await;
         }
 
         self
@@ -115,15 +118,15 @@ impl<P: Priority> ReqwestResponseOpenAiHeadersExt<P> for Response {
 
     async fn update_limiter_by_key_and_open_ai_ratelimit_headers(
         mut self,
-        limiter: &Limiter<ReqwestResult, P>,
-        key: impl Display,
+        limiter: &Limiter<K, P, ReqwestResult>,
+        key: K,
     ) -> Self {
         self = self
-            .update_limiter_by_key_and_retry_after_header(limiter, &key)
+            .update_limiter_by_key_and_retry_after_header(limiter, key.clone())
             .await;
 
         if let Some(instant) = extract_max_wait_until_instant_from_headers(&self) {
-            limiter.set_wait_until_at_least_by_key(instant, key).await;
+            limiter.set_block_by_key_until_at_least(instant, key).await;
         }
 
         self
@@ -161,7 +164,7 @@ mod tests {
             .with_status(200)
             .create();
 
-        let limiter = Limiter::new(1);
+        let limiter = Limiter::default();
         let before = Instant::now();
         let client = Client::new();
 
@@ -186,7 +189,7 @@ mod tests {
             .status();
 
         let test_duration = Instant::now() - before;
-        let wait_duration = limiter.get_wait_duration().await;
+        let wait_duration = limiter.get_default_block_duration().await;
 
         assert_eq!(first, StatusCode::TOO_MANY_REQUESTS);
         assert_eq!(second, StatusCode::OK);

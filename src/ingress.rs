@@ -1,6 +1,7 @@
 use crate::{
-    auto_traits::{Priority, TaskResult},
-    limits::Limits,
+    auto_traits::{Key, Priority, TaskResult},
+    blocks::Blocks,
+    intervals::Intervals,
     task::Task,
     worker::Worker,
 };
@@ -8,31 +9,40 @@ use crate::{
 use std::{collections::BinaryHeap, sync::Arc};
 use tokio::sync::{Mutex, RwLock, oneshot};
 
-struct TaskAck<T: TaskResult, P: Priority> {
-    task: Task<T, P>,
+struct TaskAck<K: Key, P: Priority, T: TaskResult> {
+    task: Task<K, P, T>,
     ack: oneshot::Sender<()>,
 }
 
-pub(crate) struct Ingress<T: TaskResult, P: Priority> {
-    task_sender: flume::Sender<TaskAck<T, P>>,
+pub(crate) struct Ingress<K: Key, P: Priority, T: TaskResult> {
+    task_sender: flume::Sender<TaskAck<K, P, T>>,
     notification_receiver: flume::Receiver<()>,
 }
 
-impl<T: TaskResult, P: Priority> Ingress<T, P> {
-    pub fn spawn(tasks: Arc<Mutex<BinaryHeap<Task<T, P>>>>) -> Self {
-        let (task_sender, task_receiver) = flume::unbounded::<TaskAck<T, P>>();
-        let (notification_sender, notification_receiver) = flume::unbounded();
+impl<K: Key, P: Priority, T: TaskResult> Ingress<K, P, T> {
+    pub fn spawn(tasks: Arc<Mutex<BinaryHeap<Task<K, P, T>>>>) -> Self {
+        let (task_sender, task_receiver) = flume::unbounded::<TaskAck<K, P, T>>();
+        let (notification_sender, notification_receiver) = flume::unbounded::<()>();
 
         tokio::spawn(async move {
             let mut counter = 0;
 
             while let Ok(TaskAck { task, ack }) = task_receiver.recv_async().await {
-                tasks.lock().await.push(task.with_index(counter));
+                let task = task.with_index(counter);
 
-                counter += 1;
+                // println!("Ingress - pushing task {task:?}");
+
+                let mut lock = tasks.lock().await;
+                lock.push(task);
+                drop(lock);
+                // tasks.lock().await.push(task);
 
                 let _ = ack.send(());
                 let _ = notification_sender.send_async(()).await;
+
+                // println!("Ingress - Ack and notification sent for task {counter}");
+
+                counter += 1;
             }
         });
 
@@ -42,8 +52,9 @@ impl<T: TaskResult, P: Priority> Ingress<T, P> {
         }
     }
 
-    pub async fn send(&self, task: Task<T, P>) {
+    pub async fn send(&self, task: Task<K, P, T>) {
         let (ack_sender, ack_receiver) = oneshot::channel();
+
         let _ = self
             .task_sender
             .send_async(TaskAck {
@@ -51,14 +62,16 @@ impl<T: TaskResult, P: Priority> Ingress<T, P> {
                 ack: ack_sender,
             })
             .await;
+
         let _ = ack_receiver.await;
     }
 
     pub fn spawn_worker(
         &self,
-        tasks: Arc<Mutex<BinaryHeap<Task<T, P>>>>,
-        limits: Arc<RwLock<Limits>>,
+        tasks: Arc<Mutex<BinaryHeap<Task<K, P, T>>>>,
+        blocks: Arc<RwLock<Blocks<K>>>,
+        intervals: Arc<RwLock<Intervals<K>>>,
     ) -> Worker {
-        Worker::spawn(tasks, limits, self.notification_receiver.clone())
+        Worker::spawn(tasks, blocks, intervals, self.notification_receiver.clone())
     }
 }

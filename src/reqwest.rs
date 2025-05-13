@@ -1,45 +1,45 @@
 #[cfg(feature = "open_ai")]
 mod open_ai;
-
+#[cfg(feature = "open_ai")]
 pub use self::open_ai::ReqwestResponseOpenAiHeadersExt;
 
-use crate::{Limiter, auto_traits::Priority};
+use crate::{
+    Limiter,
+    auto_traits::{Key, Priority},
+};
 
 use httpdate::parse_http_date;
 use reqwest::{Error, RequestBuilder, Response, header::RETRY_AFTER};
-use std::{
-    fmt::Display,
-    time::{Duration, SystemTime},
-};
+use std::time::{Duration, SystemTime};
 use tokio::time::Instant;
 
 type ReqwestResult = Result<Response, Error>;
 
-pub trait ReqwestRequestBuilderExt<P: Priority> {
+pub trait ReqwestRequestBuilderExt<K: Key, P: Priority> {
     fn send_limited(
         self,
-        limiter: &Limiter<ReqwestResult, P>,
+        limiter: &Limiter<K, P, ReqwestResult>,
         priority: P,
     ) -> impl Future<Output = ReqwestResult>;
 
     fn send_limited_by_key(
         self,
-        limiter: &Limiter<ReqwestResult, P>,
+        limiter: &Limiter<K, P, ReqwestResult>,
         priority: P,
-        key: impl Display,
+        key: K,
     ) -> impl Future<Output = ReqwestResult>;
 }
 
-pub trait ReqwestResponseExt<P: Priority> {
+pub trait ReqwestResponseExt<K: Key, P: Priority> {
     fn update_limiter_by_retry_after_header(
         self,
-        limiter: &Limiter<ReqwestResult, P>,
+        limiter: &Limiter<K, P, ReqwestResult>,
     ) -> impl Future<Output = Self>;
 
     fn update_limiter_by_key_and_retry_after_header(
         self,
-        limiter: &Limiter<ReqwestResult, P>,
-        key: impl Display,
+        limiter: &Limiter<K, P, ReqwestResult>,
+        key: K,
     ) -> impl Future<Output = Self>;
 }
 
@@ -61,13 +61,13 @@ fn extract_instant_from_retry_after_header_value(response: &Response) -> Option<
     None
 }
 
-impl<P: Priority> ReqwestResponseExt<P> for Response {
+impl<K: Key, P: Priority> ReqwestResponseExt<K, P> for Response {
     async fn update_limiter_by_retry_after_header(
         self,
-        limiter: &Limiter<ReqwestResult, P>,
+        limiter: &Limiter<K, P, ReqwestResult>,
     ) -> Self {
         if let Some(instant) = extract_instant_from_retry_after_header_value(&self) {
-            limiter.set_wait_until_at_least(instant).await;
+            limiter.set_default_block_until_at_least(instant).await;
         }
 
         self
@@ -75,19 +75,23 @@ impl<P: Priority> ReqwestResponseExt<P> for Response {
 
     async fn update_limiter_by_key_and_retry_after_header(
         self,
-        limiter: &Limiter<ReqwestResult, P>,
-        key: impl Display,
+        limiter: &Limiter<K, P, ReqwestResult>,
+        key: K,
     ) -> Self {
         if let Some(instant) = extract_instant_from_retry_after_header_value(&self) {
-            limiter.set_wait_until_at_least_by_key(instant, key).await;
+            limiter.set_block_by_key_until_at_least(instant, key).await;
         }
 
         self
     }
 }
 
-impl<P: Priority> ReqwestRequestBuilderExt<P> for RequestBuilder {
-    async fn send_limited(self, limiter: &Limiter<ReqwestResult, P>, priority: P) -> ReqwestResult {
+impl<K: Key, P: Priority> ReqwestRequestBuilderExt<K, P> for RequestBuilder {
+    async fn send_limited(
+        self,
+        limiter: &Limiter<K, P, ReqwestResult>,
+        priority: P,
+    ) -> ReqwestResult {
         let (client, req) = self.build_split();
 
         let req = req.expect("Unable to extract request from builder!");
@@ -98,9 +102,9 @@ impl<P: Priority> ReqwestRequestBuilderExt<P> for RequestBuilder {
 
     async fn send_limited_by_key(
         self,
-        limiter: &Limiter<ReqwestResult, P>,
+        limiter: &Limiter<K, P, ReqwestResult>,
         priority: P,
-        key: impl Display,
+        key: K,
     ) -> ReqwestResult {
         let (client, req) = self.build_split();
 
@@ -138,7 +142,7 @@ mod tests {
             .with_status(200)
             .create();
 
-        let limiter = Limiter::new(1);
+        let limiter = Limiter::default();
         let before = Instant::now();
         let client = Client::new();
 

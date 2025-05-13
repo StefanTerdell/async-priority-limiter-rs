@@ -1,21 +1,22 @@
-use tokio::sync::{Mutex, RwLock};
-
 use crate::{
-    auto_traits::{Priority, TaskResult},
-    limits::Limits,
+    auto_traits::{Key, Priority, TaskResult},
+    blocks::Blocks,
+    intervals::Intervals,
     task::Task,
 };
 
 use std::{collections::BinaryHeap, sync::Arc};
+use tokio::sync::{Mutex, RwLock};
 
 pub(crate) struct Worker {
     exit_sender: flume::Sender<()>,
 }
 
 impl Worker {
-    pub fn spawn<T: TaskResult, P: Priority>(
-        tasks: Arc<Mutex<BinaryHeap<Task<T, P>>>>,
-        limits: Arc<RwLock<Limits>>,
+    pub fn spawn<K: Key, P: Priority, T: TaskResult>(
+        tasks: Arc<Mutex<BinaryHeap<Task<K, P, T>>>>,
+        blocks: Arc<RwLock<Blocks<K>>>,
+        intervals: Arc<RwLock<Intervals<K>>>,
         notification_receiver: flume::Receiver<()>,
     ) -> Self {
         let (exit_sender, exit_receiver) = flume::bounded(1);
@@ -30,26 +31,21 @@ impl Worker {
                             break
                         },
                         _ = notification_receiver.recv_async() => {
-                            let mut tasks_guard = tasks.lock().await;
-                            let task = tasks_guard.pop();
-                            drop(tasks_guard);
+                            let task = tasks.lock().await.pop();
 
                             if let Some(task) = task {
-                                let mut limits_lock = limits.read().await;
+                                // println!("Worker - popped {task:?}");
 
-                                if let Some(duration) = limits_lock.get_wait_duration(task.key.clone()) {
-                                    drop(limits_lock);
-                                    tokio::time::sleep(duration).await;
-                                    limits_lock = limits.read().await;
-                                }
+                                blocks.read().await.wait(task.key.as_ref()).await;
+                                intervals.read().await.wait(task.key.as_ref()).await;
 
-                                let result = if let Some(key) = task.key {
-                                    limits_lock.throttle_by_key(task.job, key).await
-                                } else {
-                                    limits_lock.throttle(task.job).await
-                                };
+                                // println!("Worker - {task:?} blocks and intervals awaited");
 
-                                let _ = task.reply.send(result);
+                                // let index = task.index.unwrap_or(999);
+
+                                let _ = task.reply.send(task.job.await);
+
+                                // println!("Worker - Task {index} completed");
                             }
                         }
                     }

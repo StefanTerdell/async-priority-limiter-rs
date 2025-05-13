@@ -1,112 +1,116 @@
 use crate::{
-    auto_traits::{Priority, TaskResult},
+    BoxFuture,
+    auto_traits::{Key, Priority, TaskResult},
+    blocks::Blocks,
     ingress::Ingress,
-    limits::Limits,
+    intervals::Intervals,
     task::Task,
     worker::Worker,
 };
 
-use futures::future::BoxFuture;
-use std::{collections::BinaryHeap, fmt::Display, sync::Arc, time::Duration};
+use std::{collections::BinaryHeap, sync::Arc, time::Duration};
 use tokio::{
     sync::{Mutex, RwLock, oneshot},
     time::Instant,
 };
 
-pub struct Limiter<T: TaskResult, P: Priority> {
-    tasks: Arc<Mutex<BinaryHeap<Task<T, P>>>>,
-    limits: Arc<RwLock<Limits>>,
-    ingress: Ingress<T, P>,
+pub struct Limiter<K: Key, P: Priority, T: TaskResult> {
+    tasks: Arc<Mutex<BinaryHeap<Task<K, P, T>>>>,
+    ingress: Ingress<K, P, T>,
     workers: Mutex<Vec<Worker>>,
+    blocks: Arc<RwLock<Blocks<K>>>,
+    intervals: Arc<RwLock<Intervals<K>>>,
 }
 
-impl<T: TaskResult, P: Priority> Limiter<T, P> {
-    pub fn new(concurrent: usize) -> Self {
-        let tasks: Arc<Mutex<BinaryHeap<Task<T, P>>>> = Default::default();
-        let limits: Arc<RwLock<Limits>> = Default::default();
+impl<P: Priority, T: TaskResult> Default for Limiter<String, P, T> {
+    fn default() -> Self {
+        Self::new(1)
+    }
+}
+
+impl<P: Priority, T: TaskResult> Limiter<String, P, T> {
+    pub fn new<K: Key>(concurrent: usize) -> Limiter<K, P, T> {
+        let tasks: Arc<Mutex<BinaryHeap<Task<K, P, T>>>> = Default::default();
+        let blocks: Arc<RwLock<Blocks<K>>> = Default::default();
+        let intervals: Arc<RwLock<Intervals<K>>> = Default::default();
         let ingress = Ingress::spawn(tasks.clone());
         let workers = Mutex::new(
             (0..concurrent)
-                .map(|_| ingress.spawn_worker(tasks.clone(), limits.clone()))
+                .map(|_| ingress.spawn_worker(tasks.clone(), blocks.clone(), intervals.clone()))
                 .collect(),
         );
 
-        Self {
+        Limiter {
             tasks,
-            limits,
+            blocks,
+            intervals,
             ingress,
             workers,
         }
     }
+}
 
-    pub async fn get_wait_duration(&self) -> Option<Duration> {
-        self.limits.read().await.get_wait_duration(None)
+impl<K: Key, P: Priority, T: TaskResult> Limiter<K, P, T> {
+    pub async fn get_default_block_duration(&self) -> Option<Duration> {
+        self.blocks.write().await.get_default()
     }
 
-    pub async fn get_wait_duration_by_key(&self, key: impl Display) -> Option<Duration> {
-        self.limits
-            .read()
-            .await
-            .get_wait_duration(Some(key.to_string()))
+    pub async fn get_block_duration_by_key(&self, key: &K) -> Option<Duration> {
+        self.blocks.write().await.get_by_key(key)
     }
 
-    pub async fn set_wait_until_at_least(&self, instant: Instant) {
-        self.limits.write().await.set_wait_until_at_least(instant);
+    pub async fn set_default_block_until_at_least(&self, instant: Instant) {
+        self.blocks.write().await.set_default_at_least(instant);
     }
 
-    pub async fn set_interval_at_least(&self, interval: Duration) {
-        self.limits.write().await.set_interval_at_least(interval);
+    pub async fn set_block_by_key_until_at_least(&self, instant: Instant, key: K) {
+        self.blocks.write().await.set_at_least_by_key(instant, key);
     }
 
-    pub async fn set_interval_at_least_by_key(&self, interval: Duration, key: impl Display) {
-        self.limits
+    pub async fn set_default_block_until(&self, instant: Option<Instant>) {
+        self.blocks.write().await.set_default(instant);
+    }
+
+    pub async fn set_block_by_key_until(&self, instant: Option<Instant>, key: K) {
+        self.blocks.write().await.set_by_key(instant, key);
+    }
+
+    pub async fn set_default_interval_at_least(&self, interval: Duration) {
+        self.intervals.write().await.set_default_at_least(interval);
+    }
+
+    pub async fn set_interval_by_key_at_least(&self, interval: Duration, key: K) {
+        self.intervals
             .write()
             .await
-            .set_interval_at_least_by_key(interval, key);
+            .set_at_least_by_key(interval, key);
     }
 
-    pub async fn set_wait_until_at_least_by_key(&self, instant: Instant, key: impl Display) {
-        self.limits
-            .write()
-            .await
-            .set_wait_until_at_least_by_key(instant, key);
+    pub async fn set_default_interval(&self, interval: Option<Duration>) {
+        self.intervals.write().await.set_default(interval);
     }
 
-    pub async fn set_wait_until(&self, instant: Option<Instant>) {
-        self.limits.write().await.set_wait_until(instant);
+    pub async fn set_interval_by_key(&self, interval: Option<Duration>, key: K) {
+        self.intervals.write().await.set_by_key(interval, key);
     }
 
-    pub async fn set_wait_until_by_key(&self, instant: Option<Instant>, key: impl Display) {
-        self.limits
-            .write()
-            .await
-            .set_wait_until_by_key(instant, key);
-    }
-
-    pub async fn set_interval(&self, interval: Option<Duration>) {
-        self.limits.write().await.set_interval(interval);
-    }
-
-    pub async fn set_interval_by_key(&self, interval: Option<Duration>, key: impl Display) {
-        self.limits.write().await.set_interval_by_key(interval, key);
-    }
-
-    pub async fn set_concurrent(&self, concurrent: usize) {
+    pub async fn set_concurrent_tasks(&self, concurrent_tasks: usize) {
         let mut guard = self.workers.lock().await;
         let len = guard.len();
 
-        match len.cmp(&concurrent) {
+        match len.cmp(&concurrent_tasks) {
             std::cmp::Ordering::Less => {
-                for _ in len..concurrent {
-                    guard.push(
-                        self.ingress
-                            .spawn_worker(self.tasks.clone(), self.limits.clone()),
-                    );
+                for _ in len..concurrent_tasks {
+                    guard.push(self.ingress.spawn_worker(
+                        self.tasks.clone(),
+                        self.blocks.clone(),
+                        self.intervals.clone(),
+                    ));
                 }
             }
             std::cmp::Ordering::Equal => {}
             std::cmp::Ordering::Greater => {
-                guard.drain(concurrent..);
+                guard.drain(concurrent_tasks..);
             }
         }
     }
@@ -115,7 +119,7 @@ impl<T: TaskResult, P: Priority> Limiter<T, P> {
         &self,
         job: J,
         priority: P,
-    ) -> BoxFuture<'static, T> {
+    ) -> BoxFuture<T> {
         let (reply_sender, reply_receiver) = oneshot::channel();
 
         self.ingress
@@ -129,8 +133,8 @@ impl<T: TaskResult, P: Priority> Limiter<T, P> {
         &self,
         job: J,
         priority: P,
-        key: impl Display,
-    ) -> BoxFuture<'static, T> {
+        key: K,
+    ) -> BoxFuture<T> {
         let (reply_sender, reply_receiver) = oneshot::channel();
 
         self.ingress
@@ -150,7 +154,7 @@ mod tests {
 
     #[tokio::test]
     async fn it_should_work() {
-        let limiter = Limiter::new(0);
+        use Prio::*;
 
         #[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Eq, Ord)]
         enum Prio {
@@ -159,7 +163,7 @@ mod tests {
             High,
         }
 
-        use Prio::*;
+        let limiter = Limiter::new::<String>(0);
 
         let acc: Arc<Mutex<Vec<Prio>>> = Default::default();
 
@@ -274,14 +278,16 @@ mod tests {
                 .await,
         ];
 
-        limiter.set_interval(Some(Duration::from_millis(100))).await;
-        limiter.set_concurrent(2).await;
+        limiter
+            .set_default_interval(Some(Duration::from_millis(100)))
+            .await;
+
+        limiter.set_concurrent_tasks(2).await;
 
         let order = join_all(futures).await;
+        let acc = acc.lock().await.clone();
 
         assert_eq!(order, vec![1, 2, 3, 4, 5, 6, 7, 8, 9]);
-
-        let acc = acc.lock().await.clone();
 
         assert_eq!(acc, [High, High, High, Mid, Mid, Mid, Low, Low, Low]);
     }

@@ -4,50 +4,76 @@ This library exports the Limiter struct. It throttles prioritised tasks by limit
 
 ## Basic use
 
-Let's say I want to call an API at most once a second, one at a time, with the same priority of 10:
+This example sets up a simple queue where tasks are prioritised by integers. Once a task has been popped from the queue and has started waiting for its permit it will be next in line for execution - if not it may be overtaken by a higher priority task.
 
 ```rust
 # tokio_test::block_on(async {
 use async_priority_limiter::Limiter;
 use futures::future::join_all;
 use std::time::{Duration, Instant};
+use tokio::time::sleep;
 
-// Creates a new limiter with a single concurrent job allowed:
-let limiter = Limiter::new(1);
-// Set a base-line limit of one request every two seconds:
-limiter.set_interval(Some(Duration::from_secs(1))).await;
+// Creates a new limiter with a single concurrent job allowed using String for keys:
+let limiter = Limiter::default();
+// Set a base-line limit of one request every second:
+limiter
+    .set_default_interval(Some(Duration::from_secs(1)))
+    .await;
 
 let start = Instant::now();
 
-// Will complete instantly since the default rate limit has not been hit yet:
+// Task 'A' will execute instantly since the default rate limit has not yet been hit:
 let fut_a = limiter
     .queue(
         async move {
-            // Do whatever async stuff you wish here.
-            // For now we'll just return the task letter and the number of seconds passed since the start of the test.
-            ('A', Instant::now().duration_since(start).as_secs())
-        },
-        10, // <-- The priority value can be anything implementing Ord
-    )
-    .await; // <-- Queueing is async as an acc is awaited from the ingress thread to guarantee order of operations.
+            // Mark how many seconds have passed when the task starts
+            let task_started = Instant::now().duration_since(start).as_secs();
 
-// Would have completed after 1 second, following A, except I'll add a higher priority task before task 'B' has had a chance to aquire a permit.
+            // Do whatever async stuff you wish here.
+            sleep(Duration::from_millis(100)).await;
+
+            // For now we'll just return the task letter and start time
+            ('A', task_started)
+        },
+        // The priority value can be any type T implementing Ord:
+        10,
+    )
+    // Queueing is async as an ack signal is awaited from the ingress
+    // thread to guarantee the order of operations.
+    .await;
+
+// Task 'B´ would have started after 1 second following A, except we'll add a
+// higher priority task before it has had a chance to start.
 let fut_b = limiter
     .queue(
-        async move { ('B', Instant::now().duration_since(start).as_secs()) },
+        async move {
+            let task_started = Instant::now().duration_since(start).as_secs();
+
+            sleep(Duration::from_millis(100)).await;
+
+            ('B', task_started)
+        },
         10,
     )
     .await;
 
-// Task 'C' will complete after 1 second following 'A', and task 'B' will now complete after 2 seconds instead of 1.
+// Task 'C' has a higher priority than 'B' and will thus start after 1 second
+// following 'A', while task 'B' will start after 2 seconds instead of 1.
 let fut_c = limiter
     .queue(
-        async move { ('C', Instant::now().duration_since(start).as_secs()) },
+        async move {
+            let task_started = Instant::now().duration_since(start).as_secs();
+
+            sleep(Duration::from_millis(100)).await;
+
+            ('C', task_started)
+        },
         20,
     )
     .await;
 
-// The values of the queued async blocks are returned as BoxFuture<'static, T> which can be awaited (though the execution itself is potentially immediate):
+// The values of the queued async blocks are returned as 'static boxed futures
+// which can be awaited - just beware that execution is potentially immediate:
 let results = join_all([fut_a, fut_b, fut_c]).await;
 
 assert_eq!(results, [('A', 0), ('B', 2), ('C', 1)]);
@@ -56,18 +82,23 @@ assert_eq!(results, [('A', 0), ('B', 2), ('C', 1)]);
 
 ## Using keys
 
-All public methods have a variant accepting a "key". This is simply a String that referes to a second layer of limits. Say I wanted to keep sending a single request at a time, at most once every two seconds, but also limit a specific endpoint to a call once every _three_ seconds:
+All relevant methods have a variant accepting a "key". This key referes to a second layer of limits. Say I wanted to keep sending a single request at a time, at most once every two seconds, but also limit a specific endpoint to a call once every _three_ seconds:
+
+> Note: the default limits act as a baseline and is always awaited along the key limits. Adding a key limit that is faster than the baseline therefore does nothing!
 
 ```rust
 # tokio_test::block_on(async {
 use async_priority_limiter::Limiter;
 use futures::future::join_all;
 use std::time::{Duration, Instant};
+use tokio::time::sleep;
 
-// Creates a new limiter with a single concurrent job allowed:
+// Creates a new limiter with a single concurrent job allowed and using &'static str for keys:
 let limiter = Limiter::new(1);
 // Set a base-line limit of one request every two seconds:
-limiter.set_interval(Some(Duration::from_secs(2))).await;
+limiter
+    .set_default_interval(Some(Duration::from_secs(2)))
+    .await;
 // Set limit of one request every five seconds for the key "blargh"
 limiter
     .set_interval_by_key(Some(Duration::from_secs(5)), "blargh")
@@ -75,45 +106,66 @@ limiter
 
 let start = Instant::now();
 
-// Will complete instantly since the default rate limit has not been hit yet:
+// Task 'A' will execute instantly since the default rate limit has not yet been hit:
 let fut_a = limiter
     .queue(
         async move {
-            // Do whatever async stuff you wish here.
-            // For now we'll just return the task letter and the number of seconds passed since the start of the test.
-            ('A', Instant::now().duration_since(start).as_secs())
-        },
-        10, // <-- The priority value can be anything implementing Ord
-    )
-    .await; // <-- Queueing is async as an acc is awaited from the ingress thread to guarantee order of operations.
+            let task_started = Instant::now().duration_since(start).as_secs();
+            sleep(Duration::from_millis(100)).await;
 
-// Will complete after 4 seconds since the last task has a higher priority
-let fut_b = limiter
-    .queue(
-        async move { ('B', Instant::now().duration_since(start).as_secs()) },
+            ('A', task_started)
+        },
         10,
     )
     .await;
 
-// Will complete after 6 seconds (gets the next key permit at 5 seconds, then the base permit at 6 seconds)
+// Task 'B' will execute after 4 seconds:
+// Task 'A' and 'D' will get the first two default permits
+let fut_b = limiter
+    .queue(
+        async move {
+            let task_started = Instant::now().duration_since(start).as_secs();
+            sleep(Duration::from_millis(100)).await;
+
+            ('B', task_started)
+        },
+        10,
+    )
+    .await;
+
+// Task 'C' will execute after 6 seconds:
+// It gets the next key permit following task 'D' at 5 seconds,
+// then the next default permit at 6 after tasks 'A' and 'D'
 let fut_c = limiter
     .queue_by_key(
-        async move { ('C', Instant::now().duration_since(start).as_secs()) },
+        async move {
+            let task_started = Instant::now().duration_since(start).as_secs();
+            sleep(Duration::from_millis(100)).await;
+
+            ('C', task_started)
+        },
         10, // <-- Notice that if the priority is the same the order of insertion matters: first in, first out.
         "blargh", // <-- Second layer key
     )
     .await;
 
-// Will complete after 2 seconds (gets key permit immediately, then the next base permit at 2 seconds)
+// Task 'D' will execute after 2 seconds,
+// as it gets the next default permit after task 'A'
 let fut_d = limiter
     .queue_by_key(
-        async move { ('D', Instant::now().duration_since(start).as_secs()) },
+        async move {
+            let task_started = Instant::now().duration_since(start).as_secs();
+            sleep(Duration::from_millis(100)).await;
+
+            ('D', task_started)
+        },
         20,
         "blargh",
     )
     .await;
 
-// The values of the queued async blocks are returned as BoxFuture<'static, T> which can be awaited (though the execution itself is potentially immediate):
+// The values of the queued async blocks are returned as 'static boxed futures
+// which can be awaited - just beware that execution is potentially immediate:
 let results = join_all([fut_a, fut_b, fut_c, fut_d]).await;
 
 assert_eq!(results, [('A', 0), ('B', 4), ('C', 6), ('D', 2)]);
@@ -130,25 +182,12 @@ Enables the `send_limiter` and `send_limited_by_key` methods for the `reqwest::R
 let client = reqwest::Client::new();
 let limits = async_priority_limiter::Limiter::new(1);
 
-let response_a = client
+let response = client
   .get("herpderp")
   .send_limited(&limits)
   .await?
   // If the status is 429 and the Retry-After-header contained a valid value, the limiter will be updated accordingly, setting a hard timeout on requests:
-  .update_limiter_by_retry_after_header()
-  .await
-  .text()
-  .await;
-
-// Potentially limited:
-let response_b = client
-  .get("herpderp")
-  .send_limited(&limits)
-  .await?
-  // If the status is 429 and the header contained a valid value, the limiter will be updated accordingly, setting a hard request stop:
-  .update_limiter_by_retry_after_header()
-  .await
-  .text()
+  .update_limiter_by_retry_after_header(&limits)
   .await;
 ```
 
