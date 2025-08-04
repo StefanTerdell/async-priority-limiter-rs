@@ -25,12 +25,6 @@ pub struct Limiter<K: Key, P: Priority, T: TaskResult> {
     intervals: Arc<RwLock<Intervals<K>>>,
 }
 
-impl<P: Priority, T: TaskResult> Default for Limiter<String, P, T> {
-    fn default() -> Self {
-        Self::new(1)
-    }
-}
-
 impl<P: Priority, T: TaskResult> Limiter<String, P, T> {
     pub fn new<K: Key>(concurrent_tasks: usize) -> Limiter<K, P, T> {
         Limiter::new_with(concurrent_tasks, Default::default(), Default::default())

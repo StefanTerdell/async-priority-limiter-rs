@@ -1,6 +1,5 @@
-use std::time::Duration;
-
 use reqwest::Response;
+use std::time::Duration;
 use tokio::time::Instant;
 
 use super::{ReqwestResponseExt, ReqwestResult};
@@ -164,7 +163,7 @@ mod tests {
             .with_status(200)
             .create();
 
-        let limiter = Limiter::default();
+        let limiter = Limiter::new::<String>(1);
         let before = Instant::now();
         let client = Client::new();
 

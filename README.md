@@ -14,7 +14,7 @@ use std::time::{Duration, Instant};
 use tokio::time::sleep;
 
 // Creates a new limiter with a single concurrent job allowed using String for keys:
-let limiter = Limiter::default();
+let limiter = Limiter::new::<String>(1);
 // Set a base-line limit of one request every second:
 limiter
     .set_default_interval(Some(Duration::from_secs(1)))

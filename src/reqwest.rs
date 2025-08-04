@@ -13,7 +13,7 @@ use reqwest::{Error, RequestBuilder, Response, header::RETRY_AFTER};
 use std::time::{Duration, SystemTime};
 use tokio::time::Instant;
 
-type ReqwestResult = Result<Response, Error>;
+pub type ReqwestResult = Result<Response, Error>;
 
 pub trait ReqwestRequestBuilderExt<K: Key, P: Priority> {
     fn send_limited(
@@ -142,7 +142,7 @@ mod tests {
             .with_status(200)
             .create();
 
-        let limiter = Limiter::default();
+        let limiter = Limiter::new::<String>(1);
         let before = Instant::now();
         let client = Client::new();
 
