@@ -1,7 +1,7 @@
 use std::{collections::HashMap, time::Duration};
 use tokio::time::{Instant, sleep};
 
-use crate::auto_traits::Key;
+use crate::traits::Key;
 
 pub struct Blocks<K: Key> {
     default: Option<Instant>,

@@ -1,8 +1,8 @@
 use crate::{
-    auto_traits::{Key, Priority, TaskResult},
     blocks::Blocks,
     intervals::Intervals,
     task::Task,
+    traits::{Key, Priority, TaskResult},
 };
 
 use std::{collections::BinaryHeap, sync::Arc};

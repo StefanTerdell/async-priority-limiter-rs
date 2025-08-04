@@ -1,4 +1,4 @@
-use crate::{BoxFuture, auto_traits::Key};
+use crate::{BoxFuture, traits::Key};
 
 use std::{cmp::Ordering, fmt::Debug};
 use tokio::sync::oneshot;

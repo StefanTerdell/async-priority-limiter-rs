@@ -6,7 +6,7 @@ use tokio::time::Instant;
 use super::{ReqwestResponseExt, ReqwestResult};
 use crate::{
     Limiter,
-    auto_traits::{Key, Priority},
+    traits::{Key, Priority},
 };
 
 pub trait ReqwestResponseOpenAiHeadersExt<K: Key, P: Priority> {

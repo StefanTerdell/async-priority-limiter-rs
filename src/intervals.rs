@@ -5,7 +5,7 @@ use tokio::{
     time::{Instant, sleep},
 };
 
-use crate::auto_traits::Key;
+use crate::traits::Key;
 
 pub struct Intervals<K: Key> {
     default: Option<(Duration, Mutex<Instant>)>,

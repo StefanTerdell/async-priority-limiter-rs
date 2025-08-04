@@ -1,12 +1,13 @@
 #![doc = include_str!("../README.md")]
 
-mod auto_traits;
 mod blocks;
 mod ingress;
 mod intervals;
 mod limiter;
 mod task;
 mod worker;
+
+pub mod traits;
 
 #[cfg(feature = "reqwest")]
 pub mod reqwest;

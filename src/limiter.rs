@@ -1,10 +1,10 @@
 use crate::{
     BoxFuture,
-    auto_traits::{Key, Priority, TaskResult},
     blocks::Blocks,
     ingress::Ingress,
     intervals::Intervals,
     task::Task,
+    traits::{Key, Priority, TaskResult},
     worker::Worker,
 };
 

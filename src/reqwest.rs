@@ -5,7 +5,7 @@ pub use self::open_ai::ReqwestResponseOpenAiHeadersExt;
 
 use crate::{
     Limiter,
-    auto_traits::{Key, Priority},
+    traits::{Key, Priority},
 };
 
 use httpdate::parse_http_date;
