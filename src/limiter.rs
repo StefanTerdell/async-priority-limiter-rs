@@ -1,3 +1,5 @@
+pub mod builder;
+
 use crate::{
     BoxFuture,
     blocks::Blocks,
@@ -30,13 +32,21 @@ impl<P: Priority, T: TaskResult> Default for Limiter<String, P, T> {
 }
 
 impl<P: Priority, T: TaskResult> Limiter<String, P, T> {
-    pub fn new<K: Key>(concurrent: usize) -> Limiter<K, P, T> {
+    pub fn new<K: Key>(concurrent_tasks: usize) -> Limiter<K, P, T> {
+        Limiter::new_with(concurrent_tasks, Default::default(), Default::default())
+    }
+
+    pub fn new_with<K: Key>(
+        concurrent_tasks: usize,
+        blocks: Blocks<K>,
+        intervals: Intervals<K>,
+    ) -> Limiter<K, P, T> {
         let tasks: Arc<Mutex<BinaryHeap<Task<K, P, T>>>> = Default::default();
-        let blocks: Arc<RwLock<Blocks<K>>> = Default::default();
-        let intervals: Arc<RwLock<Intervals<K>>> = Default::default();
+        let blocks: Arc<RwLock<Blocks<K>>> = Arc::new(RwLock::new(blocks));
+        let intervals: Arc<RwLock<Intervals<K>>> = Arc::new(RwLock::new(intervals));
         let ingress = Ingress::spawn(tasks.clone());
         let workers = Mutex::new(
-            (0..concurrent)
+            (0..concurrent_tasks)
                 .map(|_| ingress.spawn_worker(tasks.clone(), blocks.clone(), intervals.clone()))
                 .collect(),
         );
@@ -148,6 +158,8 @@ impl<K: Key, P: Priority, T: TaskResult> Limiter<K, P, T> {
 
 #[cfg(test)]
 mod tests {
+    use crate::limiter::builder::LimiterBuilder;
+
     use super::*;
     use futures::future::join_all;
     use std::sync::Arc;
@@ -164,7 +176,9 @@ mod tests {
             High,
         }
 
-        let limiter = Limiter::new::<String>(0);
+        // let limiter = Limiter::new::<String>(0);
+
+        let limiter = LimiterBuilder::new::<String>(0).build();
 
         let acc: Arc<Mutex<Vec<Prio>>> = Default::default();
 

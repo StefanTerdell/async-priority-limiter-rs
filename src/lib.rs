@@ -14,4 +14,4 @@ pub mod reqwest;
 
 pub type BoxFuture<T> = std::pin::Pin<Box<dyn Future<Output = T> + Send + 'static>>;
 
-pub use limiter::Limiter;
+pub use limiter::{Limiter, builder::LimiterBuilder};
