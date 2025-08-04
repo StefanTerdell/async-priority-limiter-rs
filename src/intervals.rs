@@ -7,6 +7,7 @@ use tokio::{
 
 use crate::traits::Key;
 
+#[derive(Debug)]
 pub struct Intervals<K: Key> {
     default: Option<(Duration, Mutex<Instant>)>,
     by_key: HashMap<K, (Duration, Mutex<Instant>)>,

@@ -14,6 +14,7 @@ use tokio::{
     time::Instant,
 };
 
+#[derive(Debug)]
 pub struct Limiter<K: Key, P: Priority, T: TaskResult> {
     tasks: Arc<Mutex<BinaryHeap<Task<K, P, T>>>>,
     ingress: Ingress<K, P, T>,

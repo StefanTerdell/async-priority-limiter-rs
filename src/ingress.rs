@@ -14,6 +14,7 @@ struct TaskAck<K: Key, P: Priority, T: TaskResult> {
     ack: oneshot::Sender<()>,
 }
 
+#[derive(Debug)]
 pub(crate) struct Ingress<K: Key, P: Priority, T: TaskResult> {
     task_sender: flume::Sender<TaskAck<K, P, T>>,
     notification_receiver: flume::Receiver<()>,

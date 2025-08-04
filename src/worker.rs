@@ -8,6 +8,7 @@ use crate::{
 use std::{collections::BinaryHeap, sync::Arc};
 use tokio::sync::{Mutex, RwLock};
 
+#[derive(Debug)]
 pub(crate) struct Worker {
     exit_sender: flume::Sender<()>,
 }

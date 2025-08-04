@@ -3,6 +3,7 @@ use tokio::time::{Instant, sleep};
 
 use crate::traits::Key;
 
+#[derive(Debug)]
 pub struct Blocks<K: Key> {
     default: Option<Instant>,
     by_key: HashMap<K, Instant>,
