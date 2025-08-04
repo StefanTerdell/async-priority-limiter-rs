@@ -5,6 +5,7 @@ use crate::{
     traits::{Key, Priority, TaskResult},
 };
 
+use std::time::Duration;
 use tokio::time::Instant;
 
 #[derive(Debug)]
@@ -29,11 +30,11 @@ impl<K: Key> LimiterBuilder<K> {
         self.concurrent_tasks = concurrent_tasks;
         self
     }
-    pub fn with_block_until(mut self, instant: Option<Instant>) -> Self {
+    pub fn with_default_block_until(mut self, instant: Option<Instant>) -> Self {
         self.blocks.set_default(instant);
         self
     }
-    pub fn with_block_until_at_least(mut self, instant: Instant) -> Self {
+    pub fn with_default_block_until_at_least(mut self, instant: Instant) -> Self {
         self.blocks.set_default_at_least(instant);
         self
     }
@@ -43,6 +44,23 @@ impl<K: Key> LimiterBuilder<K> {
     }
     pub fn with_block_by_key_until_at_least(mut self, instant: Instant, key: K) -> Self {
         self.blocks.set_at_least_by_key(instant, key);
+        self
+    }
+
+    pub fn with_default_interval(mut self, period: Option<Duration>) -> Self {
+        self.intervals.set_default(period);
+        self
+    }
+    pub fn with_default_interval_at_least(mut self, period: Duration) -> Self {
+        self.intervals.set_default_at_least(period);
+        self
+    }
+    pub fn with_interval_by_key(mut self, period: Option<Duration>, key: K) -> Self {
+        self.intervals.set_by_key(period, key);
+        self
+    }
+    pub fn with_interval_by_key_at_least(mut self, period: Duration, key: K) -> Self {
+        self.intervals.set_at_least_by_key(period, key);
         self
     }
 
