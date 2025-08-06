@@ -66,7 +66,28 @@ impl<K: Key, P: Priority> ReqwestResponseExt<K, P> for Response {
         self,
         limiter: impl AsRef<Limiter<K, P, ReqwestResult>>,
     ) -> Self {
-        if let Some(instant) = extract_instant_from_retry_after_header_value(&self) {
+        (&self).update_limiter_by_retry_after_header(limiter).await;
+        self
+    }
+
+    async fn update_limiter_by_key_and_retry_after_header(
+        self,
+        limiter: impl AsRef<Limiter<K, P, ReqwestResult>>,
+        key: K,
+    ) -> Self {
+        (&self)
+            .update_limiter_by_key_and_retry_after_header(limiter, key)
+            .await;
+        self
+    }
+}
+
+impl<K: Key, P: Priority> ReqwestResponseExt<K, P> for &Response {
+    async fn update_limiter_by_retry_after_header(
+        self,
+        limiter: impl AsRef<Limiter<K, P, ReqwestResult>>,
+    ) -> Self {
+        if let Some(instant) = extract_instant_from_retry_after_header_value(self) {
             limiter
                 .as_ref()
                 .set_default_block_until_at_least(instant)
@@ -81,7 +102,7 @@ impl<K: Key, P: Priority> ReqwestResponseExt<K, P> for Response {
         limiter: impl AsRef<Limiter<K, P, ReqwestResult>>,
         key: K,
     ) -> Self {
-        if let Some(instant) = extract_instant_from_retry_after_header_value(&self) {
+        if let Some(instant) = extract_instant_from_retry_after_header_value(self) {
             limiter
                 .as_ref()
                 .set_block_by_key_until_at_least(instant, key)

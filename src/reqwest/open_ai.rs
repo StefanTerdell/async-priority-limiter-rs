@@ -103,14 +103,37 @@ fn extract_max_wait_until_instant_from_headers(response: &Response) -> Option<In
 
 impl<K: Key, P: Priority> ReqwestResponseOpenAiHeadersExt<K, P> for Response {
     async fn update_limiter_by_open_ai_ratelimit_headers(
-        mut self,
+        self,
+        limiter: impl AsRef<Limiter<K, P, ReqwestResult>>,
+    ) -> Self {
+        (&self)
+            .update_limiter_by_open_ai_ratelimit_headers(limiter)
+            .await;
+        self
+    }
+
+    async fn update_limiter_by_key_and_open_ai_ratelimit_headers(
+        self,
+        limiter: impl AsRef<Limiter<K, P, ReqwestResult>>,
+        key: K,
+    ) -> Self {
+        (&self)
+            .update_limiter_by_key_and_open_ai_ratelimit_headers(limiter, key)
+            .await;
+        self
+    }
+}
+
+impl<K: Key, P: Priority> ReqwestResponseOpenAiHeadersExt<K, P> for &Response {
+    async fn update_limiter_by_open_ai_ratelimit_headers(
+        self,
         limiter: impl AsRef<Limiter<K, P, ReqwestResult>>,
     ) -> Self {
         let limiter = limiter.as_ref();
 
-        self = self.update_limiter_by_retry_after_header(limiter).await;
+        self.update_limiter_by_retry_after_header(limiter).await;
 
-        if let Some(instant) = extract_max_wait_until_instant_from_headers(&self) {
+        if let Some(instant) = extract_max_wait_until_instant_from_headers(self) {
             limiter.set_default_block_until_at_least(instant).await;
         }
 
@@ -118,17 +141,16 @@ impl<K: Key, P: Priority> ReqwestResponseOpenAiHeadersExt<K, P> for Response {
     }
 
     async fn update_limiter_by_key_and_open_ai_ratelimit_headers(
-        mut self,
+        self,
         limiter: impl AsRef<Limiter<K, P, ReqwestResult>>,
         key: K,
     ) -> Self {
         let limiter = limiter.as_ref();
 
-        self = self
-            .update_limiter_by_key_and_retry_after_header(limiter, key.clone())
+        self.update_limiter_by_key_and_retry_after_header(limiter, key.clone())
             .await;
 
-        if let Some(instant) = extract_max_wait_until_instant_from_headers(&self) {
+        if let Some(instant) = extract_max_wait_until_instant_from_headers(self) {
             limiter.set_block_by_key_until_at_least(instant, key).await;
         }
 
