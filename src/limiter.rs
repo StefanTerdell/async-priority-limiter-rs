@@ -120,6 +120,16 @@ impl<K: Key, P: Priority, T: TaskResult> Limiter<K, P, T> {
         }
     }
 
+    pub async fn queue_empty(&self, priority: P) -> BoxFuture<()> {
+        let (reply_sender, reply_receiver) = oneshot::channel();
+
+        self.ingress
+            .send(Task::new_empty(priority, reply_sender))
+            .await;
+
+        Box::pin(async move { reply_receiver.await.expect("reply_sender should not drop") })
+    }
+
     pub async fn queue<J: Future<Output = T> + Send + 'static>(
         &self,
         job: J,
@@ -129,6 +139,16 @@ impl<K: Key, P: Priority, T: TaskResult> Limiter<K, P, T> {
 
         self.ingress
             .send(Task::new(job, priority, reply_sender))
+            .await;
+
+        Box::pin(async move { reply_receiver.await.expect("reply_sender should not drop") })
+    }
+
+    pub async fn queue_empty_by_key(&self, priority: P, key: K) -> BoxFuture<()> {
+        let (reply_sender, reply_receiver) = oneshot::channel();
+
+        self.ingress
+            .send(Task::new_empty_with_key(priority, reply_sender, key))
             .await;
 
         Box::pin(async move { reply_receiver.await.expect("reply_sender should not drop") })

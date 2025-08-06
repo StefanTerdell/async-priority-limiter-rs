@@ -43,8 +43,14 @@ impl Worker {
                                 // println!("Worker - {task:?} blocks and intervals awaited");
 
                                 // let index = task.index.unwrap_or(999);
+                                //
 
-                                let _ = task.reply.send(task.job.await);
+                                match task.job {
+                                    crate::task::Job::Some { job, reply } => {let _ = reply.send(job.await);},
+                                    crate::task::Job::None { reply } => { let _ = reply.send(());},
+                                };
+
+                                // let _ = task.reply.send(if let Some(job) = task.job { job.await } else { () });
 
                                 // println!("Worker - Task {index} completed");
                             }

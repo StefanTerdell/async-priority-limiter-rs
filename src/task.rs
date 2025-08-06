@@ -3,12 +3,21 @@ use crate::{BoxFuture, traits::Key};
 use std::{cmp::Ordering, fmt::Debug};
 use tokio::sync::oneshot;
 
+pub(crate) enum Job<T> {
+    Some {
+        job: BoxFuture<T>,
+        reply: oneshot::Sender<T>,
+    },
+    None {
+        reply: oneshot::Sender<()>,
+    },
+}
+
 pub(crate) struct Task<K: Key, P: Ord, T> {
     pub(crate) index: Option<u64>,
     pub(crate) priority: P,
     pub(crate) key: Option<K>,
-    pub(crate) job: BoxFuture<T>,
-    pub(crate) reply: oneshot::Sender<T>,
+    pub(crate) job: Job<T>,
 }
 
 impl<T, P: Ord + Debug, K: Key + Debug> Debug for Task<K, P, T> {
@@ -28,9 +37,20 @@ impl<T, P: Ord, K: Key> Task<K, P, T> {
         reply: oneshot::Sender<T>,
     ) -> Self {
         Self {
-            job: Box::pin(job),
+            job: Job::Some {
+                job: Box::pin(job),
+                reply,
+            },
             priority,
-            reply,
+            key: None,
+            index: None,
+        }
+    }
+
+    pub fn new_empty(priority: P, reply: oneshot::Sender<()>) -> Self {
+        Self {
+            job: Job::None { reply },
+            priority,
             key: None,
             index: None,
         }
@@ -43,9 +63,20 @@ impl<T, P: Ord, K: Key> Task<K, P, T> {
         key: K,
     ) -> Self {
         Self {
-            job: Box::pin(job),
+            job: Job::Some {
+                job: Box::pin(job),
+                reply,
+            },
             priority,
-            reply,
+            key: Some(key),
+            index: None,
+        }
+    }
+
+    pub fn new_empty_with_key(priority: P, reply: oneshot::Sender<()>, key: K) -> Self {
+        Self {
+            job: Job::None { reply },
+            priority,
             key: Some(key),
             index: None,
         }
