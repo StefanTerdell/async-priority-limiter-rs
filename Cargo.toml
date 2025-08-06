@@ -1,6 +1,6 @@
 [package]
 name = "async-priority-limiter"
-version = "0.4.0"
+version = "0.4.1"
 edition = "2024"
 description = "Throttles prioritised tasks by limiting the max concurrent tasks and minimum time between tasks, with up to two levels based on keys"
 license = "ISC"
