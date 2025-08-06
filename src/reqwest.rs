@@ -18,13 +18,13 @@ pub type ReqwestResult = Result<Response, Error>;
 pub trait ReqwestRequestBuilderExt<K: Key, P: Priority> {
     fn send_limited(
         self,
-        limiter: &Limiter<K, P, ReqwestResult>,
+        limiter: impl AsRef<Limiter<K, P, ReqwestResult>>,
         priority: P,
     ) -> impl Future<Output = ReqwestResult>;
 
     fn send_limited_by_key(
         self,
-        limiter: &Limiter<K, P, ReqwestResult>,
+        limiter: impl AsRef<Limiter<K, P, ReqwestResult>>,
         priority: P,
         key: K,
     ) -> impl Future<Output = ReqwestResult>;
@@ -33,12 +33,12 @@ pub trait ReqwestRequestBuilderExt<K: Key, P: Priority> {
 pub trait ReqwestResponseExt<K: Key, P: Priority> {
     fn update_limiter_by_retry_after_header(
         self,
-        limiter: &Limiter<K, P, ReqwestResult>,
+        limiter: impl AsRef<Limiter<K, P, ReqwestResult>>,
     ) -> impl Future<Output = Self>;
 
     fn update_limiter_by_key_and_retry_after_header(
         self,
-        limiter: &Limiter<K, P, ReqwestResult>,
+        limiter: impl AsRef<Limiter<K, P, ReqwestResult>>,
         key: K,
     ) -> impl Future<Output = Self>;
 }
@@ -64,10 +64,13 @@ fn extract_instant_from_retry_after_header_value(response: &Response) -> Option<
 impl<K: Key, P: Priority> ReqwestResponseExt<K, P> for Response {
     async fn update_limiter_by_retry_after_header(
         self,
-        limiter: &Limiter<K, P, ReqwestResult>,
+        limiter: impl AsRef<Limiter<K, P, ReqwestResult>>,
     ) -> Self {
         if let Some(instant) = extract_instant_from_retry_after_header_value(&self) {
-            limiter.set_default_block_until_at_least(instant).await;
+            limiter
+                .as_ref()
+                .set_default_block_until_at_least(instant)
+                .await;
         }
 
         self
@@ -75,11 +78,14 @@ impl<K: Key, P: Priority> ReqwestResponseExt<K, P> for Response {
 
     async fn update_limiter_by_key_and_retry_after_header(
         self,
-        limiter: &Limiter<K, P, ReqwestResult>,
+        limiter: impl AsRef<Limiter<K, P, ReqwestResult>>,
         key: K,
     ) -> Self {
         if let Some(instant) = extract_instant_from_retry_after_header_value(&self) {
-            limiter.set_block_by_key_until_at_least(instant, key).await;
+            limiter
+                .as_ref()
+                .set_block_by_key_until_at_least(instant, key)
+                .await;
         }
 
         self
@@ -89,20 +95,20 @@ impl<K: Key, P: Priority> ReqwestResponseExt<K, P> for Response {
 impl<K: Key, P: Priority> ReqwestRequestBuilderExt<K, P> for RequestBuilder {
     async fn send_limited(
         self,
-        limiter: &Limiter<K, P, ReqwestResult>,
+        limiter: impl AsRef<Limiter<K, P, ReqwestResult>>,
         priority: P,
     ) -> ReqwestResult {
         let (client, req) = self.build_split();
 
         let req = req.expect("Unable to extract request from builder!");
-        let res = limiter.queue(client.execute(req), priority).await;
+        let res = limiter.as_ref().queue(client.execute(req), priority).await;
 
         res.await
     }
 
     async fn send_limited_by_key(
         self,
-        limiter: &Limiter<K, P, ReqwestResult>,
+        limiter: impl AsRef<Limiter<K, P, ReqwestResult>>,
         priority: P,
         key: K,
     ) -> ReqwestResult {
@@ -110,6 +116,7 @@ impl<K: Key, P: Priority> ReqwestRequestBuilderExt<K, P> for RequestBuilder {
 
         let req = req.expect("Unable to extract request from builder!");
         let res = limiter
+            .as_ref()
             .queue_by_key(client.execute(req), priority, key)
             .await;
 

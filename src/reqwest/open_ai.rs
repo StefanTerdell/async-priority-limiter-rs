@@ -11,12 +11,12 @@ use crate::{
 pub trait ReqwestResponseOpenAiHeadersExt<K: Key, P: Priority> {
     fn update_limiter_by_open_ai_ratelimit_headers(
         self,
-        limiter: &Limiter<K, P, ReqwestResult>,
+        limiter: impl AsRef<Limiter<K, P, ReqwestResult>>,
     ) -> impl Future<Output = Self>;
 
     fn update_limiter_by_key_and_open_ai_ratelimit_headers(
         self,
-        limiter: &Limiter<K, P, ReqwestResult>,
+        limiter: impl AsRef<Limiter<K, P, ReqwestResult>>,
         key: K,
     ) -> impl Future<Output = Self>;
 }
@@ -104,8 +104,10 @@ fn extract_max_wait_until_instant_from_headers(response: &Response) -> Option<In
 impl<K: Key, P: Priority> ReqwestResponseOpenAiHeadersExt<K, P> for Response {
     async fn update_limiter_by_open_ai_ratelimit_headers(
         mut self,
-        limiter: &Limiter<K, P, ReqwestResult>,
+        limiter: impl AsRef<Limiter<K, P, ReqwestResult>>,
     ) -> Self {
+        let limiter = limiter.as_ref();
+
         self = self.update_limiter_by_retry_after_header(limiter).await;
 
         if let Some(instant) = extract_max_wait_until_instant_from_headers(&self) {
@@ -117,9 +119,11 @@ impl<K: Key, P: Priority> ReqwestResponseOpenAiHeadersExt<K, P> for Response {
 
     async fn update_limiter_by_key_and_open_ai_ratelimit_headers(
         mut self,
-        limiter: &Limiter<K, P, ReqwestResult>,
+        limiter: impl AsRef<Limiter<K, P, ReqwestResult>>,
         key: K,
     ) -> Self {
+        let limiter = limiter.as_ref();
+
         self = self
             .update_limiter_by_key_and_retry_after_header(limiter, key.clone())
             .await;

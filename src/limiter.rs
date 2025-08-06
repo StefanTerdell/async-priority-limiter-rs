@@ -25,6 +25,12 @@ pub struct Limiter<K: Key, P: Priority, T: TaskResult> {
     intervals: Arc<RwLock<Intervals<K>>>,
 }
 
+impl<K: Key, P: Priority, T: TaskResult> AsRef<Limiter<K, P, T>> for Limiter<K, P, T> {
+    fn as_ref(&self) -> &Limiter<K, P, T> {
+        self
+    }
+}
+
 impl<P: Priority, T: TaskResult> Limiter<String, P, T> {
     pub fn new<K: Key>(concurrent_tasks: usize) -> Limiter<K, P, T> {
         Limiter::new_with(concurrent_tasks, Default::default(), Default::default())
