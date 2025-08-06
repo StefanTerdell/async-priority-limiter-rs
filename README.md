@@ -176,7 +176,7 @@ assert_eq!(results, [('A', 0), ('B', 4), ('C', 6), ('D', 2)]);
 
 ### `reqwest`
 
-Enables the `send_limiter` and `send_limited_by_key` methods for the `reqwest::RequestBuilder` struct, and the `update_limiter_by_retry_after_header` and `update_limiter_by_key_and_retry_after_header` for the `reqwest::Response` struct:
+Enables the `send_limited` and `send_limited_by_key` methods for the `reqwest::RequestBuilder` struct, and the `update_limiter_by_retry_after_header` and `update_limiter_by_key_and_retry_after_header` for the `reqwest::Response` struct:
 
 ```not-rust
 let client = reqwest::Client::new();
@@ -198,3 +198,9 @@ Enables the `update_limiter_by_open_ai_ratelimit_headers` and `update_limiter_by
 This prevents new requests from being made if remaining tokens or requests reach zero or less until the counter resets.
 
 Requires the `reqwest` feature.
+
+### `eventsource`
+
+Enables the `eventsource_limited` and `eventsource_limited_by_key` methods for the `reqwest::RequestBuilder` struct.
+
+Based on a [tiny fork](https://github.com/StefanTerdell/reqwest-eventsource) of the excellent [reqwest-eventsource](https://github.com/jpopesculian/reqwest-eventsource) crate.
