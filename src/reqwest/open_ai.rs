@@ -1,4 +1,4 @@
-use reqwest::Response;
+use reqwest::{Response, header::HeaderMap};
 use std::time::Duration;
 use tokio::time::Instant;
 
@@ -44,7 +44,7 @@ const X_RATELIMIT_RESET_TOKENS: &str = "x-ratelimit-reset-tokens";
 
 impl OpenAiRateLimit {
     fn from_response_headers_by_type(
-        response: &Response,
+        headers: &HeaderMap,
         limit_type: OpenAiRateLimitType,
     ) -> Option<Self> {
         let (max_key, remaining_key, reset_key) = match &limit_type {
@@ -62,18 +62,15 @@ impl OpenAiRateLimit {
 
         Some(Self {
             limit_type,
-            remaining: response
-                .headers()
+            remaining: headers
                 .get(remaining_key)
                 .and_then(|value| value.to_str().ok())
                 .and_then(|remaining| remaining.parse().ok())?,
-            max: response
-                .headers()
+            max: headers
                 .get(max_key)
                 .and_then(|value| value.to_str().ok())
                 .and_then(|max| max.parse().ok())?,
-            reset: response
-                .headers()
+            reset: headers
                 .get(reset_key)
                 .and_then(|value| value.to_str().ok())
                 .and_then(|max| humantime::parse_duration(max).ok())?,
@@ -89,13 +86,13 @@ impl OpenAiRateLimit {
     }
 }
 
-fn extract_max_wait_until_instant_from_headers(response: &Response) -> Option<Instant> {
+fn extract_max_wait_until_instant_from_headers(headers: &HeaderMap) -> Option<Instant> {
     let no_requests_until =
-        OpenAiRateLimit::from_response_headers_by_type(response, OpenAiRateLimitType::Requests)
+        OpenAiRateLimit::from_response_headers_by_type(headers, OpenAiRateLimitType::Requests)
             .and_then(OpenAiRateLimit::wait_until_instant);
 
     let no_tokens_until =
-        OpenAiRateLimit::from_response_headers_by_type(response, OpenAiRateLimitType::Tokens)
+        OpenAiRateLimit::from_response_headers_by_type(headers, OpenAiRateLimitType::Tokens)
             .and_then(OpenAiRateLimit::wait_until_instant);
 
     no_requests_until.max(no_tokens_until)
@@ -106,7 +103,7 @@ impl<K: Key, P: Priority> ReqwestResponseOpenAiHeadersExt<K, P> for Response {
         self,
         limiter: impl AsRef<Limiter<K, P, ReqwestResult>>,
     ) -> Self {
-        (&self)
+        self.headers()
             .update_limiter_by_open_ai_ratelimit_headers(limiter)
             .await;
         self
@@ -117,7 +114,7 @@ impl<K: Key, P: Priority> ReqwestResponseOpenAiHeadersExt<K, P> for Response {
         limiter: impl AsRef<Limiter<K, P, ReqwestResult>>,
         key: K,
     ) -> Self {
-        (&self)
+        self.headers()
             .update_limiter_by_key_and_open_ai_ratelimit_headers(limiter, key)
             .await;
         self
@@ -125,6 +122,29 @@ impl<K: Key, P: Priority> ReqwestResponseOpenAiHeadersExt<K, P> for Response {
 }
 
 impl<K: Key, P: Priority> ReqwestResponseOpenAiHeadersExt<K, P> for &Response {
+    async fn update_limiter_by_open_ai_ratelimit_headers(
+        self,
+        limiter: impl AsRef<Limiter<K, P, ReqwestResult>>,
+    ) -> Self {
+        self.headers()
+            .update_limiter_by_open_ai_ratelimit_headers(limiter)
+            .await;
+        self
+    }
+
+    async fn update_limiter_by_key_and_open_ai_ratelimit_headers(
+        self,
+        limiter: impl AsRef<Limiter<K, P, ReqwestResult>>,
+        key: K,
+    ) -> Self {
+        self.headers()
+            .update_limiter_by_key_and_open_ai_ratelimit_headers(limiter, key)
+            .await;
+        self
+    }
+}
+
+impl<K: Key, P: Priority> ReqwestResponseOpenAiHeadersExt<K, P> for &HeaderMap {
     async fn update_limiter_by_open_ai_ratelimit_headers(
         self,
         limiter: impl AsRef<Limiter<K, P, ReqwestResult>>,

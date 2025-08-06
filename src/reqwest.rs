@@ -9,7 +9,10 @@ use crate::{
 };
 
 use httpdate::parse_http_date;
-use reqwest::{Error, RequestBuilder, Response, header::RETRY_AFTER};
+use reqwest::{
+    Error, RequestBuilder, Response,
+    header::{HeaderMap, RETRY_AFTER},
+};
 use std::time::{Duration, SystemTime};
 use tokio::time::Instant;
 
@@ -43,9 +46,8 @@ pub trait ReqwestResponseExt<K: Key, P: Priority> {
     ) -> impl Future<Output = Self>;
 }
 
-fn extract_instant_from_retry_after_header_value(response: &Response) -> Option<Instant> {
-    if let Some(value) = response
-        .headers()
+fn extract_instant_from_retry_after_header_value(headers: &HeaderMap) -> Option<Instant> {
+    if let Some(value) = headers
         .get(RETRY_AFTER)
         .and_then(|value| value.to_str().ok())
     {
@@ -66,7 +68,9 @@ impl<K: Key, P: Priority> ReqwestResponseExt<K, P> for Response {
         self,
         limiter: impl AsRef<Limiter<K, P, ReqwestResult>>,
     ) -> Self {
-        (&self).update_limiter_by_retry_after_header(limiter).await;
+        self.headers()
+            .update_limiter_by_retry_after_header(limiter)
+            .await;
         self
     }
 
@@ -75,7 +79,7 @@ impl<K: Key, P: Priority> ReqwestResponseExt<K, P> for Response {
         limiter: impl AsRef<Limiter<K, P, ReqwestResult>>,
         key: K,
     ) -> Self {
-        (&self)
+        self.headers()
             .update_limiter_by_key_and_retry_after_header(limiter, key)
             .await;
         self
@@ -83,6 +87,29 @@ impl<K: Key, P: Priority> ReqwestResponseExt<K, P> for Response {
 }
 
 impl<K: Key, P: Priority> ReqwestResponseExt<K, P> for &Response {
+    async fn update_limiter_by_retry_after_header(
+        self,
+        limiter: impl AsRef<Limiter<K, P, ReqwestResult>>,
+    ) -> Self {
+        self.headers()
+            .update_limiter_by_retry_after_header(limiter)
+            .await;
+        self
+    }
+
+    async fn update_limiter_by_key_and_retry_after_header(
+        self,
+        limiter: impl AsRef<Limiter<K, P, ReqwestResult>>,
+        key: K,
+    ) -> Self {
+        self.headers()
+            .update_limiter_by_key_and_retry_after_header(limiter, key)
+            .await;
+        self
+    }
+}
+
+impl<K: Key, P: Priority> ReqwestResponseExt<K, P> for &HeaderMap {
     async fn update_limiter_by_retry_after_header(
         self,
         limiter: impl AsRef<Limiter<K, P, ReqwestResult>>,
